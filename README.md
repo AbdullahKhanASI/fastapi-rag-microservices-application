@@ -1,6 +1,6 @@
-# RAG Chatbot Microservices Architecture
+# 🤖 RAG Chatbot - Full Stack Application
 
-A production-ready **Retrieval-Augmented Generation (RAG) chatbot** built with **FastAPI microservices**. This system processes documents, stores them in a vector database, performs intelligent retrieval, and generates contextual responses using large language models.
+A production-ready **Retrieval-Augmented Generation (RAG) chatbot** with **FastAPI microservices backend** and **Next.js frontend**. This system processes documents, stores them in a vector database, performs intelligent retrieval, and generates contextual responses using large language models.
 
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
