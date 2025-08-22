@@ -276,4 +276,4 @@ temp/
 tmp/
 
 # Claude workspace
-.claude/
+.claude/node_modules/
