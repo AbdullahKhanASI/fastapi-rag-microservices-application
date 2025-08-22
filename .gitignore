@@ -277,3 +277,5 @@ tmp/
 
 # Claude workspace
 .claude/node_modules/
+node_modules/
+**/node_modules/
