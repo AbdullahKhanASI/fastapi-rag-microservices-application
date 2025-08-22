@@ -79,3 +79,142 @@ htmlcov/
 
 # Test scripts (keep for reference)
 # test_retriever_simple.py
+
+# Frontend - Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+frontend/.env*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+frontend/.vercel
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Frontend - Build outputs
+frontend/dist/
+frontend/build/
+
+# Frontend - Cache
+frontend/.cache/
+frontend/.parcel-cache/
+
+# Frontend - IDE specific
+frontend/.vscode/
+frontend/.idea/
+
+# Backend - Service specific logs
+backend/services/*/services/*.log
+backend/services/*/uploads/
+backend/services/*/__pycache__/
+
+# Backend - Python cache
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+backend/**/*.pyd
+
+# Backend - Virtual environments
+backend/.venv/
+backend/venv/
+backend/env/
+
+# Backend - Test coverage
+backend/.coverage
+backend/htmlcov/
+backend/.pytest_cache/
+
+# Backend - Environment files
+backend/.env
+backend/.env.local
+backend/.env.*.local
+
+# Backend - Temporary files
+backend/**/*.tmp
+backend/**/*.temp
+
+# Backend - IDE specific
+backend/.vscode/
+backend/.idea/
+
+# Backend - OS specific
+backend/.DS_Store
+backend/Thumbs.db
+
+# Backend - Docker
+backend/docker-compose.override.yml
+
+# Backend - Database files
+backend/*.db
+backend/*.sqlite3
+
+# Backend - Log files (keep some for reference)
+# backend/logs/  # Commented out to keep log files for debugging
+backend/services/*/services/*.log
+
+# Backend - Upload directories
+backend/services/*/uploads/
+
+# Backend - Cache directories
+backend/.cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+
+# Backend - Jupyter
+backend/.ipynb_checkpoints/
+
+# Backend - Documentation builds
+backend/docs/_build/
+backend/docs/build/
+
+# Backend - Coverage reports
+backend/coverage.xml
+backend/.coverage.*
+
+# Backend - Profiling
+backend/*.prof
+backend/*.profile
+
+# Backend - Local development
+backend/local_settings.py
+backend/settings_local.py
+
+# Backend - Backup files
+backend/**/*.bak
+backend/**/*.backup
+
+# Backend - Lock files (keep requirements.txt but ignore lock files)
+backend/poetry.lock
+backend/Pipfile.lock
+
+# Frontend - Lock files (keep package.json but ignore lock files)
+frontend/yarn.lock
+frontend/pnpm-lock.yaml
+
+# Frontend - TypeScript
+frontend/**/*.tsbuildinfo
+
+# Frontend - Bundle analyzer
+frontend/.next/analyze/
+
+# Frontend - Storybook
+frontend/storybook-static/
+
+# Frontend - Cypress
+frontend/cypress/videos/
+frontend/cypress/screenshots/
+
+# Frontend - Playwright
+frontend/test-results/
+frontend/playwright-report/
+
+# Frontend - Sentry
+frontend/.sentryclirc
+
+# Frontend - Local development
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
