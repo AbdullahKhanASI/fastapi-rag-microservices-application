@@ -64,6 +64,38 @@ Thumbs.db
 
 # Qdrant
 qdrant_storage/
+**/qdrant_storage/
+*.mmap
+*.dat
+
+# Large files and data
+*.pdf
+*.zip
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+*.iso
+*.img
+*.bin
+*.dump
+*.backup
+*.bak
+
+# Memory-mapped files and large data files
+*.mmap
+*.dat
+*.idx
+*.vec
+*.emb
+*.bin
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.parquet
+*.feather
+*.arrow
 
 # Jupyter
 .ipynb_checkpoints/
@@ -219,3 +251,29 @@ frontend/.env.local
 frontend/.env.development.local
 frontend/.env.test.local
 frontend/.env.production.local
+
+# Large files and data storage
+**/vector_storage/
+**/payload_storage/
+**/wal/
+**/segments/
+**/collections/
+**/aliases/
+
+# Model files and embeddings
+*.model
+*.weights
+*.embeddings
+*.vectors
+*.index
+*.faiss
+*.ann
+
+# Cache and temporary directories
+.cache/
+.tmp/
+temp/
+tmp/
+
+# Claude workspace
+.claude/
