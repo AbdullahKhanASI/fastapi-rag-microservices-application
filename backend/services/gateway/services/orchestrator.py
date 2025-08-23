@@ -120,8 +120,8 @@ class RAGOrchestrator:
             # Step 2: Search for relevant documents
             search_query = SearchQuery(
                 query=enhanced_query.enhanced_query,
-                top_k=request.retrieval_params.top_k if request.retrieval_params else request.top_k,
-                threshold=request.retrieval_params.threshold if request.retrieval_params else 0.6
+                top_k=getattr(request, 'retrieval_params', None) and getattr(request.retrieval_params, 'top_k', None) or request.top_k,
+                threshold=getattr(request, 'retrieval_params', None) and getattr(request.retrieval_params, 'threshold', None) or 0.1
             )
             retrieval_response = await self.search_documents(search_query)
             
@@ -130,8 +130,8 @@ class RAGOrchestrator:
                 enhanced_query=enhanced_query.enhanced_query,
                 retrieved_docs=retrieval_response.results,
                 conversation_history=conversation_history,
-                temperature=request.generation_params.temperature if request.generation_params else 0.7,
-                max_tokens=request.generation_params.max_tokens if request.generation_params else 500
+                temperature=getattr(request, 'generation_params', None) and getattr(request.generation_params, 'temperature', None) or request.temperature,
+                max_tokens=getattr(request, 'generation_params', None) and getattr(request.generation_params, 'max_tokens', None) or 1000
             )
             generation_response = await self.generate_response(generation_request)
             

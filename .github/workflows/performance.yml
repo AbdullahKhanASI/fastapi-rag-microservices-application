@@ -1,0 +1,532 @@
+name: Performance & Load Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run performance tests weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Test duration in minutes'
+        required: false
+        default: '5'
+      concurrent_users:
+        description: 'Number of concurrent users'
+        required: false
+        default: '10'
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "18"
+
+jobs:
+  backend-performance:
+    name: Backend Performance Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/health || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+          
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        pip install uv
+        uv venv
+        source .venv/bin/activate
+        uv pip install -r backend/requirements.txt
+        uv pip install locust pytest-benchmark
+        
+    - name: Start backend services
+      run: |
+        source .venv/bin/activate
+        cd backend
+        
+        # Start all services in background
+        python -m services.storage.main &
+        python -m services.retriever.main &
+        python -m services.query_enhancement.main &
+        python -m services.generation.main &
+        python -m services.gateway.main &
+        
+        # Wait for services to be ready
+        sleep 30
+        
+        # Check if all services are running
+        curl -f http://localhost:8000/health/all
+        
+    - name: Upload test documents
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        # Upload sample documents for performance testing
+        curl -X POST -F "file=@backend/ai_document.txt" http://localhost:8000/upload
+        curl -X POST -F "file=@backend/new_test.txt" http://localhost:8000/upload
+        
+    - name: Run performance benchmarks
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        source .venv/bin/activate
+        
+        # Create performance test script
+        cat << 'EOF' > performance_test.py
+import requests
+import time
+import concurrent.futures
+import statistics
+
+def test_chat_performance(num_requests=50):
+    """Test chat endpoint performance"""
+    url = "http://localhost:8000/chat"
+    payload = {"message": "What is artificial intelligence?"}
+    
+    response_times = []
+    
+    def make_request():
+        start_time = time.time()
+        response = requests.post(url, json=payload)
+        end_time = time.time()
+        
+        if response.status_code == 200:
+            return end_time - start_time
+        else:
+            return None
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(make_request) for _ in range(num_requests)]
+        response_times = [f.result() for f in concurrent.futures.as_completed(futures) if f.result() is not None]
+    
+    if response_times:
+        print(f"Chat Performance Results:")
+        print(f"  Requests: {len(response_times)}")
+        print(f"  Average: {statistics.mean(response_times):.3f}s")
+        print(f"  Median: {statistics.median(response_times):.3f}s")
+        print(f"  Min: {min(response_times):.3f}s")
+        print(f"  Max: {max(response_times):.3f}s")
+        print(f"  95th percentile: {statistics.quantiles(response_times, n=20)[18]:.3f}s")
+    
+    return response_times
+
+def test_search_performance(num_requests=100):
+    """Test search endpoint performance"""
+    url = "http://localhost:8000/search"
+    payload = {
+        "query": "machine learning artificial intelligence",
+        "top_k": 5,
+        "threshold": 0.1
+    }
+    
+    response_times = []
+    
+    def make_request():
+        start_time = time.time()
+        response = requests.post(url, json=payload)
+        end_time = time.time()
+        
+        if response.status_code == 200:
+            return end_time - start_time
+        else:
+            return None
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(make_request) for _ in range(num_requests)]
+        response_times = [f.result() for f in concurrent.futures.as_completed(futures) if f.result() is not None]
+    
+    if response_times:
+        print(f"Search Performance Results:")
+        print(f"  Requests: {len(response_times)}")
+        print(f"  Average: {statistics.mean(response_times):.3f}s")
+        print(f"  Median: {statistics.median(response_times):.3f}s")
+        print(f"  Min: {min(response_times):.3f}s")
+        print(f"  Max: {max(response_times):.3f}s")
+        print(f"  95th percentile: {statistics.quantiles(response_times, n=20)[18]:.3f}s")
+    
+    return response_times
+
+if __name__ == "__main__":
+    print("Starting Performance Tests...")
+    
+    # Wait for services to be fully ready
+    time.sleep(10)
+    
+    # Test search performance (faster endpoint)
+    search_times = test_search_performance(50)
+    
+    # Test chat performance (slower endpoint with LLM)
+    chat_times = test_chat_performance(20)
+    
+    # Performance assertions
+    if search_times:
+        avg_search_time = statistics.mean(search_times)
+        assert avg_search_time < 2.0, f"Search too slow: {avg_search_time:.3f}s"
+        print("✅ Search performance test passed")
+    
+    if chat_times:
+        avg_chat_time = statistics.mean(chat_times)
+        assert avg_chat_time < 5.0, f"Chat too slow: {avg_chat_time:.3f}s"
+        print("✅ Chat performance test passed")
+EOF
+
+        python performance_test.py
+        
+    - name: Generate performance report
+      run: |
+        echo "## Performance Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "Performance tests completed successfully" >> $GITHUB_STEP_SUMMARY
+        echo "- Search endpoint: < 2s average response time" >> $GITHUB_STEP_SUMMARY
+        echo "- Chat endpoint: < 5s average response time" >> $GITHUB_STEP_SUMMARY
+
+  load-testing:
+    name: Load Testing with Locust
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+          
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        pip install uv locust
+        uv venv
+        source .venv/bin/activate
+        uv pip install -r backend/requirements.txt
+        
+    - name: Start backend services
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        source .venv/bin/activate
+        cd backend
+        
+        # Start all services
+        python -m services.storage.main &
+        python -m services.retriever.main &
+        python -m services.query_enhancement.main &
+        python -m services.generation.main &
+        python -m services.gateway.main &
+        
+        sleep 30
+        
+        # Upload test documents
+        curl -X POST -F "file=@ai_document.txt" http://localhost:8000/upload
+        
+    - name: Create Locust test file
+      run: |
+        cat << 'EOF' > locustfile.py
+from locust import HttpUser, task, between
+import random
+
+class RAGChatbotUser(HttpUser):
+    wait_time = between(1, 3)
+    
+    def on_start(self):
+        # Test health endpoint first
+        self.client.get("/health")
+    
+    @task(3)
+    def search_documents(self):
+        queries = [
+            "artificial intelligence",
+            "machine learning",
+            "neural networks",
+            "deep learning",
+            "natural language processing"
+        ]
+        payload = {
+            "query": random.choice(queries),
+            "top_k": 5,
+            "threshold": 0.1
+        }
+        self.client.post("/search", json=payload)
+    
+    @task(2)
+    def chat_with_documents(self):
+        messages = [
+            "What is artificial intelligence?",
+            "Explain machine learning",
+            "How do neural networks work?",
+            "What are the applications of AI?",
+            "Tell me about deep learning"
+        ]
+        payload = {
+            "message": random.choice(messages)
+        }
+        self.client.post("/chat", json=payload)
+    
+    @task(1)
+    def list_files(self):
+        self.client.get("/files")
+    
+    @task(1)
+    def health_check(self):
+        self.client.get("/health/all")
+EOF
+        
+    - name: Run load test
+      run: |
+        # Get parameters from workflow input or use defaults
+        DURATION=${{ github.event.inputs.duration || '5' }}
+        USERS=${{ github.event.inputs.concurrent_users || '10' }}
+        
+        # Run Locust load test
+        locust -f locustfile.py --host=http://localhost:8000 \
+               --users $USERS --spawn-rate 2 \
+               --run-time ${DURATION}m --html locust_report.html
+               
+    - name: Upload load test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: load-test-results
+        path: locust_report.html
+
+  frontend-performance:
+    name: Frontend Performance Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+        
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+        
+    - name: Install Lighthouse CI
+      run: npm install -g @lhci/cli
+      
+    - name: Start frontend server
+      run: |
+        cd frontend
+        npm start &
+        sleep 10
+        
+    - name: Run Lighthouse CI
+      run: |
+        lhci autorun --upload.target=temporary-public-storage
+        
+    - name: Performance budget check
+      run: |
+        echo "Checking performance budgets..."
+        # Add performance budget assertions here
+        # - First Contentful Paint < 2s
+        # - Largest Contentful Paint < 4s
+        # - Time to Interactive < 5s
+        # - Cumulative Layout Shift < 0.1
+
+  memory-profiling:
+    name: Memory & Resource Profiling
+    runs-on: ubuntu-latest
+    
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+          
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        pip install uv memory-profiler psutil
+        uv venv
+        source .venv/bin/activate
+        uv pip install -r backend/requirements.txt
+        
+    - name: Run memory profiling
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        source .venv/bin/activate
+        
+        # Create memory profiling script
+        cat << 'EOF' > memory_profile.py
+import psutil
+import requests
+import time
+import os
+
+def monitor_memory(duration_minutes=2):
+    """Monitor memory usage during operation"""
+    process = psutil.Process(os.getpid())
+    memory_usage = []
+    
+    start_time = time.time()
+    end_time = start_time + (duration_minutes * 60)
+    
+    while time.time() < end_time:
+        memory_info = process.memory_info()
+        memory_usage.append({
+            'timestamp': time.time() - start_time,
+            'rss': memory_info.rss / 1024 / 1024,  # MB
+            'vms': memory_info.vms / 1024 / 1024   # MB
+        })
+        
+        # Make some API calls to simulate load
+        try:
+            requests.post("http://localhost:8000/search", 
+                         json={"query": "test", "top_k": 5}, 
+                         timeout=1)
+        except:
+            pass
+            
+        time.sleep(1)
+    
+    print(f"Memory Usage Results:")
+    print(f"  Peak RSS: {max(m['rss'] for m in memory_usage):.2f} MB")
+    print(f"  Average RSS: {sum(m['rss'] for m in memory_usage) / len(memory_usage):.2f} MB")
+    print(f"  Peak VMS: {max(m['vms'] for m in memory_usage):.2f} MB")
+    
+    return memory_usage
+
+if __name__ == "__main__":
+    print("Starting memory profiling...")
+    memory_data = monitor_memory(1)  # 1 minute test
+EOF
+        
+        # Start services in background for profiling
+        cd backend
+        python -m services.storage.main &
+        python -m services.retriever.main &
+        python -m services.gateway.main &
+        
+        sleep 30
+        python ../memory_profile.py
+
+  database-performance:
+    name: Database Performance Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+          
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        pip install uv
+        uv venv
+        source .venv/bin/activate
+        uv pip install qdrant-client numpy time
+        
+    - name: Test vector database performance
+      run: |
+        source .venv/bin/activate
+        
+        cat << 'EOF' > db_performance.py
+import time
+import numpy as np
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct
+
+def test_qdrant_performance():
+    client = QdrantClient("localhost", port=6333)
+    
+    collection_name = "performance_test"
+    
+    # Create collection
+    client.create_collection(
+        collection_name=collection_name,
+        vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+    )
+    
+    # Test insertion performance
+    print("Testing insertion performance...")
+    vectors = [np.random.random(1536).tolist() for _ in range(1000)]
+    points = [
+        PointStruct(id=i, vector=vector, payload={"text": f"Document {i}"})
+        for i, vector in enumerate(vectors)
+    ]
+    
+    start_time = time.time()
+    client.upsert(collection_name=collection_name, points=points)
+    insertion_time = time.time() - start_time
+    
+    print(f"Inserted 1000 vectors in {insertion_time:.3f}s")
+    print(f"Rate: {1000/insertion_time:.1f} vectors/second")
+    
+    # Test search performance
+    print("\nTesting search performance...")
+    query_vector = np.random.random(1536).tolist()
+    
+    search_times = []
+    for _ in range(100):
+        start_time = time.time()
+        results = client.search(
+            collection_name=collection_name,
+            query_vector=query_vector,
+            limit=10
+        )
+        search_times.append(time.time() - start_time)
+    
+    avg_search_time = sum(search_times) / len(search_times)
+    print(f"Average search time: {avg_search_time*1000:.1f}ms")
+    print(f"Search rate: {1/avg_search_time:.1f} searches/second")
+    
+    # Cleanup
+    client.delete_collection(collection_name)
+
+if __name__ == "__main__":
+    test_qdrant_performance()
+EOF
+        
+        python db_performance.py

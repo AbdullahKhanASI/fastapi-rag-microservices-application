@@ -56,8 +56,8 @@ class ResponseGenerator:
             else:
                 raise Exception("OpenAI client not initialized")
             
-            # Extract source files
-            sources = list(set(doc.source_file for doc in retrieved_docs))
+            # Extract source files (filter out empty sources)
+            sources = list(set(doc.source_file for doc in retrieved_docs if doc.source_file.strip()))
             
             # Calculate confidence based on retrieved document scores
             confidence = self._calculate_confidence(retrieved_docs)

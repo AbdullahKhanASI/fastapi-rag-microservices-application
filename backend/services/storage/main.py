@@ -73,7 +73,7 @@ async def upload_file(file: UploadFile = File(...)):
         
         # Process file
         text_content = await file_processor.extract_text(upload_path, FileType(file_extension))
-        chunks = await file_processor.chunk_text(text_content)
+        chunks = await file_processor.chunk_text(text_content, source_file=safe_filename)
         
         # Generate embeddings
         embeddings = await embedding_service.generate_embeddings([chunk.content for chunk in chunks])

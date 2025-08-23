@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Optional
 import openai
-from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from rank_bm25 import BM25Okapi
@@ -47,7 +46,12 @@ class HybridRetriever:
         if settings.openai_api_key:
             self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
         else:
-            self.sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
+            # Fallback to sentence transformers - import only when needed
+            try:
+                from sentence_transformers import SentenceTransformer
+                self.sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
+            except ImportError as e:
+                raise Exception(f"sentence_transformers not available and no OpenAI API key provided: {e}")
     
     async def _load_documents_for_bm25(self):
         """Load documents from Qdrant for BM25 indexing."""

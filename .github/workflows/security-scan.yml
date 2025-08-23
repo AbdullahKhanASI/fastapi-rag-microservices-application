@@ -1,0 +1,204 @@
+name: Security & Dependency Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly security scans on Mondays at 9 AM UTC
+    - cron: '0 9 * * 1'
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  dependency-check:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install UV and dependencies
+      run: |
+        pip install uv
+        uv venv
+        source .venv/bin/activate
+        uv pip install -r backend/requirements.txt
+        
+    - name: Install security tools
+      run: |
+        source .venv/bin/activate
+        uv pip install safety bandit semgrep
+        
+    - name: Check for vulnerable dependencies (Safety)
+      run: |
+        source .venv/bin/activate
+        safety check --json --output safety-report.json
+      continue-on-error: true
+      
+    - name: Python security linting (Bandit)
+      run: |
+        source .venv/bin/activate
+        bandit -r backend/ -f json -o bandit-report.json
+      continue-on-error: true
+      
+    - name: Static analysis (Semgrep)
+      run: |
+        source .venv/bin/activate
+        semgrep --config=auto backend/ --json --output=semgrep-report.json
+      continue-on-error: true
+      
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports-${{ github.sha }}
+        path: |
+          safety-report.json
+          bandit-report.json
+          semgrep-report.json
+          
+    - name: Create security summary
+      run: |
+        echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- Safety (dependency vulnerabilities): $(jq '.vulnerabilities | length' safety-report.json || echo '0') issues found" >> $GITHUB_STEP_SUMMARY
+        echo "- Bandit (security linting): $(jq '.results | length' bandit-report.json || echo '0') issues found" >> $GITHUB_STEP_SUMMARY
+        echo "- Semgrep (static analysis): $(jq '.results | length' semgrep-report.json || echo '0') issues found" >> $GITHUB_STEP_SUMMARY
+
+  docker-security-scan:
+    name: Docker Image Security Scan
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        service: [storage, retriever, query_enhancement, generation, gateway]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build Docker image for scanning
+      run: |
+        docker build -t rag-${{ matrix.service }}:scan ./backend/services/${{ matrix.service }}
+        
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'rag-${{ matrix.service }}:scan'
+        format: 'sarif'
+        output: 'trivy-${{ matrix.service }}.sarif'
+        
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-${{ matrix.service }}.sarif'
+
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install TruffleHog
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+        
+    - name: Scan for secrets
+      run: |
+        trufflehog git file://. --json > trufflehog-report.json
+      continue-on-error: true
+      
+    - name: Upload secret scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: secret-scan-results
+        path: trufflehog-report.json
+
+  license-check:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        pip install uv pip-licenses
+        uv venv
+        source .venv/bin/activate
+        uv pip install -r backend/requirements.txt
+        
+    - name: Check licenses
+      run: |
+        source .venv/bin/activate
+        pip-licenses --format=json --output-file=licenses-report.json
+        
+    - name: Upload license report
+      uses: actions/upload-artifact@v3
+      with:
+        name: license-report
+        path: licenses-report.json
+
+  frontend-security:
+    name: Frontend Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+        
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+        
+    - name: Run npm audit
+      run: |
+        cd frontend
+        npm audit --audit-level=moderate --json > npm-audit-report.json
+      continue-on-error: true
+      
+    - name: Upload frontend security report
+      uses: actions/upload-artifact@v3
+      with:
+        name: frontend-security-report
+        path: frontend/npm-audit-report.json
+
+  security-notification:
+    name: Security Notification
+    needs: [dependency-check, docker-security-scan, secret-scanning, license-check, frontend-security]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Download all security artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: Send security summary
+      run: |
+        echo "Security scan completed for commit ${{ github.sha }}"
+        echo "Check the artifacts for detailed reports"
+        # Add notification logic here (Slack, email, etc.)

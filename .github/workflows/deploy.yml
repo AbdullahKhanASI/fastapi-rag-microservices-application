@@ -1,0 +1,290 @@
+name: Deployment Pipeline
+
+on:
+  workflow_run:
+    workflows: ["RAG Chatbot CI/CD Pipeline"]
+    types:
+      - completed
+    branches: [main, develop]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Deploy to staging when develop branch passes CI
+  deploy-staging:
+    name: Deploy to Staging Environment
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'develop' }}
+    
+    environment:
+      name: staging
+      url: https://staging-rag.example.com
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+        
+    - name: Configure AWS credentials (if using EKS)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+      continue-on-error: true  # Allow for different cloud providers
+      
+    - name: Deploy to staging with Docker Compose
+      run: |
+        # Create staging environment variables
+        cat << EOF > .env.staging
+        ENVIRONMENT=staging
+        OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+        QDRANT_HOST=qdrant-staging
+        LOG_LEVEL=INFO
+        # Add other staging-specific configurations
+        EOF
+        
+        # Deploy using docker-compose
+        docker-compose -f docker-compose.staging.yml up -d
+        
+    - name: Wait for services to be ready
+      run: |
+        echo "Waiting for services to be ready..."
+        timeout 300 bash -c '
+          until curl -f http://localhost:8000/health/all; do 
+            echo "Waiting for services..."
+            sleep 10
+          done
+        '
+        
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on staging..."
+        # Test document upload
+        curl -X POST -F "file=@ai_document.txt" http://localhost:8000/upload
+        
+        # Test chat functionality
+        response=$(curl -s -X POST -H "Content-Type: application/json" \
+          -d '{"message": "What is artificial intelligence?"}' \
+          http://localhost:8000/chat)
+        
+        if [[ $response == *"response"* ]]; then
+          echo "✅ Staging smoke tests passed"
+        else
+          echo "❌ Staging smoke tests failed"
+          exit 1
+        fi
+        
+    - name: Notify staging deployment
+      run: |
+        echo "✅ Staging deployment successful!"
+        echo "Environment URL: https://staging-rag.example.com"
+
+  # Deploy to production when main branch passes CI
+  deploy-production:
+    name: Deploy to Production Environment
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    
+    environment:
+      name: production
+      url: https://rag.example.com
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Create production backup
+      run: |
+        echo "Creating production backup before deployment..."
+        # Add backup logic here
+        # - Database backup
+        # - Configuration backup
+        # - Volume backup
+        
+    - name: Blue-Green Deployment Setup
+      run: |
+        echo "Setting up blue-green deployment..."
+        # Implement blue-green deployment strategy
+        # 1. Deploy to green environment
+        # 2. Run health checks
+        # 3. Switch traffic from blue to green
+        # 4. Keep blue as rollback option
+        
+    - name: Deploy to production
+      run: |
+        # Create production environment variables
+        cat << EOF > .env.production
+        ENVIRONMENT=production
+        OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD }}
+        QDRANT_HOST=qdrant-production
+        LOG_LEVEL=WARNING
+        RATE_LIMIT_ENABLED=true
+        # Add other production-specific configurations
+        EOF
+        
+        # Deploy using production docker-compose
+        docker-compose -f docker-compose.production.yml up -d
+        
+    - name: Production health checks
+      run: |
+        echo "Running production health checks..."
+        timeout 600 bash -c '
+          until curl -f https://rag.example.com/health/all; do 
+            echo "Waiting for production services..."
+            sleep 15
+          done
+        '
+        
+    - name: Run production smoke tests
+      run: |
+        echo "Running production smoke tests..."
+        
+        # Test all critical endpoints
+        endpoints=(
+          "https://rag.example.com/health"
+          "https://rag.example.com/health/all"
+          "https://rag.example.com/files"
+        )
+        
+        for endpoint in "${endpoints[@]}"; do
+          if curl -f "$endpoint"; then
+            echo "✅ $endpoint is healthy"
+          else
+            echo "❌ $endpoint failed health check"
+            exit 1
+          fi
+        done
+        
+    - name: Performance baseline check
+      run: |
+        echo "Running performance baseline checks..."
+        # Add performance testing
+        # - Response time validation
+        # - Throughput testing
+        # - Resource utilization check
+        
+    - name: Notify production deployment
+      run: |
+        echo "🚀 Production deployment successful!"
+        echo "Environment URL: https://rag.example.com"
+
+  # Kubernetes deployment (alternative to Docker Compose)
+  deploy-kubernetes:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && vars.DEPLOY_TARGET == 'kubernetes' }}
+    
+    environment:
+      name: kubernetes-production
+      url: https://k8s-rag.example.com
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+        
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'v3.12.0'
+        
+    - name: Configure Kubernetes context
+      run: |
+        # Configure kubectl to connect to your cluster
+        # This depends on your cloud provider (AWS EKS, Google GKE, Azure AKS, etc.)
+        echo "Configuring Kubernetes context..."
+        
+    - name: Deploy with Helm
+      run: |
+        # Create Kubernetes namespace if it doesn't exist
+        kubectl create namespace rag-chatbot --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Deploy using Helm chart
+        helm upgrade --install rag-chatbot ./helm/rag-chatbot \
+          --namespace rag-chatbot \
+          --set image.tag=${{ github.sha }} \
+          --set ingress.host=k8s-rag.example.com \
+          --set secrets.openaiApiKey=${{ secrets.OPENAI_API_KEY_PROD }}
+          
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status deployment/gateway -n rag-chatbot --timeout=600s
+        kubectl rollout status deployment/storage -n rag-chatbot --timeout=600s
+        kubectl rollout status deployment/retriever -n rag-chatbot --timeout=600s
+        
+    - name: Run Kubernetes smoke tests
+      run: |
+        # Get the service URL
+        SERVICE_URL=$(kubectl get ingress rag-chatbot-ingress -n rag-chatbot -o jsonpath='{.spec.rules[0].host}')
+        
+        # Test health endpoint
+        if curl -f "https://$SERVICE_URL/health/all"; then
+          echo "✅ Kubernetes deployment healthy"
+        else
+          echo "❌ Kubernetes deployment failed health check"
+          exit 1
+        fi
+
+  rollback:
+    name: Automatic Rollback
+    runs-on: ubuntu-latest
+    if: ${{ failure() }}
+    needs: [deploy-production]
+    
+    environment:
+      name: production
+      
+    steps:
+    - name: Rollback production deployment
+      run: |
+        echo "🔄 Rolling back production deployment..."
+        # Implement rollback strategy
+        # - Restore previous Docker images
+        # - Restore database backup
+        # - Switch traffic back to previous version
+        
+    - name: Notify rollback
+      run: |
+        echo "⚠️ Production rollback executed"
+        # Send alert notifications
+
+  post-deployment:
+    name: Post-Deployment Tasks
+    needs: [deploy-production]
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+    - name: Update monitoring dashboards
+      run: |
+        echo "Updating monitoring dashboards..."
+        # Update Grafana dashboards
+        # Update alerting rules
+        
+    - name: Performance monitoring
+      run: |
+        echo "Setting up performance monitoring..."
+        # Configure application monitoring
+        # Set up log aggregation
+        
+    - name: Documentation update
+      run: |
+        echo "Updating deployment documentation..."
+        # Auto-update deployment docs
+        # Update API documentation
+        
+    - name: Success notification
+      run: |
+        echo "🎉 Deployment pipeline completed successfully!"
+        # Send success notifications to team

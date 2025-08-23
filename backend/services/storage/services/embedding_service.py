@@ -1,6 +1,5 @@
 from typing import List
 import openai
-from sentence_transformers import SentenceTransformer
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -22,8 +21,12 @@ class EmbeddingService:
             openai.api_key = settings.openai_api_key
             self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
         else:
-            # Fallback to sentence transformers
-            self.sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
+            # Fallback to sentence transformers - import only when needed
+            try:
+                from sentence_transformers import SentenceTransformer
+                self.sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
+            except ImportError as e:
+                raise Exception(f"sentence_transformers not available and no OpenAI API key provided: {e}")
     
     async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for a list of texts."""
