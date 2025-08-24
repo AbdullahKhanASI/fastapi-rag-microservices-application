@@ -77,30 +77,8 @@ except Exception as e:
       run: |
         source .venv/bin/activate
         cd backend
-        echo "Running basic tests..."
-        
-        # Test file processor (text chunking - no API required)
-        python -c "
-import sys
-sys.path.append('.')
-from services.storage.services.file_processor import FileProcessor
-
-processor = FileProcessor()
-text = 'This is a test document with some content to chunk.'
-chunks = processor.chunk_text(text, chunk_size=20, overlap=5)
-print(f'✅ Text chunking test passed: {len(chunks)} chunks created')
-"
-        
-        # Test basic imports
-        python -c "
-import sys
-sys.path.append('.')
-from services.storage.services.vector_store import VectorStore
-from services.retriever.services.hybrid_retriever import HybridRetriever
-print('✅ All service imports successful')
-"
-        
-        echo "✅ Basic tests completed successfully!"
+        echo "Running import and functionality tests..."
+        python test_imports.py
 
   frontend-basic:
     name: Frontend Basic Tests
