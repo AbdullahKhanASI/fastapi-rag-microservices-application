@@ -59,16 +59,16 @@ jobs:
         source .venv/bin/activate
         cd backend
         python -c "
-from qdrant_client import QdrantClient
-try:
-    client = QdrantClient('localhost', port=6333)
-    info = client.get_collections()
-    print('✅ Successfully connected to Qdrant')
-    print(f'Collections: {info}')
-except Exception as e:
-    print(f'❌ Failed to connect to Qdrant: {e}')
-    exit(1)
-"
+        from qdrant_client import QdrantClient
+        try:
+            client = QdrantClient('localhost', port=6333)
+            info = client.get_collections()
+            print('✅ Successfully connected to Qdrant')
+            print(f'Collections: {info}')
+        except Exception as e:
+            print(f'❌ Failed to connect to Qdrant: {e}')
+            exit(1)
+        "
         
     - name: Run basic tests
       env:
